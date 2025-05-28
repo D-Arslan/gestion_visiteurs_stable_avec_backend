@@ -1,20 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/translations.dart';
 
 class SettingsPage extends StatelessWidget {
   final VoidCallback onLogout;
   final void Function(String) onLanguageChange;
-  final void Function(String) onNavigate; // 🔁 Ajout
+  final void Function(String) onNavigate;
 
   const SettingsPage({
     required this.onLogout,
     required this.onLanguageChange,
-    required this.onNavigate, // 🔁 Ajout
+    required this.onNavigate,
     Key? key,
   }) : super(key: key);
 
+  Future<void> _handleLogout(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+    onLogout(); // Notifie le parent pour changer de page et état
+  }
+
   @override
-Widget build(BuildContext context) {
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(getText(context, 'settings'))),
       body: ListView(
@@ -43,7 +50,7 @@ Widget build(BuildContext context) {
           ListTile(
             leading: Icon(Icons.logout),
             title: Text(getText(context, 'logout')),
-            onTap: onLogout,
+            onTap: () => _handleLogout(context),
           ),
         ],
       ),

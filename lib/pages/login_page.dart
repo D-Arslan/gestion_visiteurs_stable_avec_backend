@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import '../utils/translations.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/translations.dart';
 
 class LoginPage extends StatefulWidget {
   final void Function() onLoginSuccess;
@@ -16,13 +17,56 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   String? _errorText;
+  bool _loading = false;
 
-  void _login() {
-    if (_usernameController.text == "admin" && _passwordController.text == "1234") {
-      widget.onLoginSuccess();
-    } else {
+  Future<void> _login() async {
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (username.isEmpty || password.isEmpty) {
       setState(() {
-        _errorText = getText(context, 'invalid_credentials');
+        _errorText = getText(context, 'fill_all_fields');
+      });
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _errorText = null;
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('http://192.168.1.223:8060/api/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'username': username, 'password': password}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final token = data['token'];
+
+        if (token != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('auth_token', token);
+          widget.onLoginSuccess();
+        } else {
+          setState(() {
+            _errorText = "Token manquant dans la réponse";
+          });
+        }
+      } else {
+        setState(() {
+          _errorText = getText(context, 'invalid_credentials');
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorText = getText(context, 'connection_error');
+      });
+    } finally {
+      setState(() {
+        _loading = false;
       });
     }
   }
@@ -43,13 +87,13 @@ class _LoginPageState extends State<LoginPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(getText(context, 'login_instruction'), style: TextStyle(fontSize: 18)),
-            SizedBox(height: 16),
+            Text(getText(context, 'login_instruction'), style: const TextStyle(fontSize: 18)),
+            const SizedBox(height: 16),
             TextField(
               controller: _usernameController,
               decoration: InputDecoration(labelText: getText(context, 'username')),
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             TextField(
               controller: _passwordController,
               obscureText: _obscurePassword,
@@ -61,14 +105,16 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             if (_errorText != null)
-              Text(_errorText!, style: TextStyle(color: Colors.red)),
-            SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _login,
-              child: Text(getText(context, 'login_button')),
-            ),
+              Text(_errorText!, style: const TextStyle(color: Colors.red)),
+            const SizedBox(height: 16),
+            _loading
+                ? const CircularProgressIndicator()
+                : ElevatedButton(
+                    onPressed: _login,
+                    child: Text(getText(context, 'login_button')),
+                  ),
           ],
         ),
       ),

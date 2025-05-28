@@ -5,7 +5,8 @@ import '../services/visiteur_service.dart';
 import 'package:hive/hive.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http; // ✅ Ajout : pour les requêtes HTTP
-import 'package:http/http.dart' as http; // Pour les requêtes HTTP (POST/PUT)
+import 'package:shared_preferences/shared_preferences.dart';
+
 
 
 class HomePage extends StatefulWidget {
@@ -206,6 +207,16 @@ class _HomePageState extends State<HomePage> {
 
   // === Nouvelle fonction : envoi intelligent vers l'API ===
 Future<void> _envoyerVisiteurs() async {
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('auth_token');
+
+  if (token == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Token manquant. Connectez-vous.")),
+    );
+    return;
+  }
+
   final box = Hive.box('visiteurs');
   final liste = box.values.map((v) => Map<String, dynamic>.from(v)).toList();
 
@@ -213,40 +224,38 @@ Future<void> _envoyerVisiteurs() async {
     final isSorti = visiteur['dateDepart'] != null && visiteur['dateDepart'].toString().isNotEmpty;
     final id = visiteur['id'] ?? 0;
 
-    final jsonBody = isSorti
-        ? jsonEncode({
-            "nom": visiteur['nom'],
-            "prenom": visiteur['prenom'],
-            "numeroId": visiteur['numeroId'],
-            "visitDate": convertDateToSQLFormat(visiteur['dateEntree']),
-            "exitDate": convertDateToSQLFormat(visiteur['dateDepart']),
-            "status": "CLOTURE",
-            "satisfaction": visiteur['satisfaction']
-          })
-        : jsonEncode({
-            "nom": visiteur['nom'],
-            "prenom": visiteur['prenom'],
-            "numeroId": visiteur['numeroId'],
-            "heureArrivee": convertDateToSQLFormat(visiteur['dateEntree']),
-            "serviceId": visiteur['serviceId']
-          });
+    final jsonBody = jsonEncode({
+      'nom': visiteur['nom'],
+      'prenom': visiteur['prenom'],
+      'numeroId': visiteur['numeroId'],
+      'heureArrivee': convertDateToSQLFormat(visiteur['dateEntree']),
+      'serviceId': visiteur['serviceId'],
+      'QRcode': visiteur['qrId'],
+      if (isSorti) 'exitDate': convertDateToSQLFormat(visiteur['dateDepart']),
+    });
 
     try {
       final uri = isSorti
-          ? Uri.parse('http://192.168.1.223:8060/api/visits/$id') // remplace par IP locale si sur mobile
+          ? Uri.parse('http://192.168.1.223:8060/api/visits/$id')
           : Uri.parse('http://192.168.1.223:8060/api/visits');
 
-      print("== Données envoyées pour ${visiteur['nom']} ${visiteur['prenom']} ==");
-print(jsonBody);
-
-final response = isSorti
-          ? await http.put(uri, headers: {'Content-Type': 'application/json'}, body: jsonBody)
-          : await http.post(uri, headers: {'Content-Type': 'application/json'}, body: jsonBody);
+      final headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      };
+  print("🔐 Token utilisé : $token");
+  print("📤 URL utilisée : $uri");
+  print("📤 Headers : $headers");
+  print("📦 Corps JSON : $jsonBody");
+      final response = isSorti
+      
+          ? await http.put(uri, headers: headers, body: jsonBody)
+          : await http.post(uri, headers: headers, body: jsonBody);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        debugPrint("✅ ${isSorti ? 'PUT' : 'POST'} OK : ${visiteur['nom']} ${visiteur['prenom']}");
+        debugPrint("✅ Données envoyées pour ${visiteur['nom']}");
       } else {
-        debugPrint("❌ (${response.statusCode}) pour ${visiteur['nom']} ${visiteur['prenom']} : ${response.body}");
+        debugPrint("❌ (${response.statusCode}) : ${response.body}");
       }
     } catch (e) {
       debugPrint("❗ Erreur : $e");
@@ -257,6 +266,7 @@ final response = isSorti
     const SnackBar(content: Text("Données envoyées à l'API")),
   );
 }
+
 
 
   // === Fonction déjà existante ===
@@ -270,21 +280,18 @@ final response = isSorti
       return input;
     }
   }
-    void _exporterJSON() {
-    // === Méthode déjà existante ===
-    final box = Hive.box('visiteurs');
-    final liste = box.values.map((v) => Map<String, dynamic>.from(v)).map((visiteur) => {
-  'id': visiteur['id'] ?? 0,
-  'nom': visiteur['nom'],
-  'prenom': visiteur['prenom'],
-  'numeroId': visiteur['numeroId'],
-  'heureArrivee': convertDateToSQLFormat(visiteur['dateEntree']),
-  'heureSortie': visiteur['dateDepart'] != null ? convertDateToSQLFormat(visiteur['dateDepart']) : "",
-  'serviceVisite': visiteur['serviceNom'],
-  'serviceId': visiteur['serviceId'],
-  'statut': visiteur['statut'],
-  'satisfaction': visiteur['satisfaction'],
-}).toList();
+
+void _exporterJSON() {
+  final box = Hive.box('visiteurs');
+  final liste = box.values.map((v) => Map<String, dynamic>.from(v)).map((visiteur) => {
+    'nom': visiteur['nom'],
+    'prenom': visiteur['prenom'],
+    'numeroId': visiteur['numeroId'],
+    'heureArrivee': convertDateToSQLFormat(visiteur['dateEntree']),
+    'serviceId': visiteur['serviceId'],
+    'QRcode': visiteur['qrId'],
+
+  }).toList();
 
 
     final json = jsonEncode(liste);

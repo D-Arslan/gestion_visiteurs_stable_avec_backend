@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-
 import 'package:hive_flutter/hive_flutter.dart';
-
 import 'pages/home_page.dart';
 import 'pages/login_page.dart';
 import 'pages/settings_page.dart';
 import 'pages/scan_page.dart';
-
 import 'pages/qr_code_page.dart';
-
 import 'utils/translations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 
 void main() async {
@@ -36,12 +33,18 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  void _logout() {
-    setState(() {
-      _isLoggedIn = false;
-      _currentPage = 'home';
-    });
-  }
+//LogOut
+void _logout() {
+  setState(() {
+    _isLoggedIn = false;
+    _currentPage = 'home';
+  });
+}
+
+
+
+//Fin Logout
+
 
   void _onLoginSuccess() {
     setState(() {
@@ -60,11 +63,12 @@ Widget _getPage() {
     case 'scan':
       return const ScanPage();
     case 'settings':
-      return SettingsPage(
-        onLogout: _logout,
-        onLanguageChange: _changeLanguage,
-        onNavigate: _navigateTo,
-      );
+  return SettingsPage(
+    onLogout: _logout,
+    onLanguageChange: _changeLanguage,
+    onNavigate: _navigateTo,
+  );
+
       case 'qr':
       return const QRCodePage();
     case 'home':
