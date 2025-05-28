@@ -7,8 +7,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http; // ✅ Ajout : pour les requêtes HTTP
 import 'package:shared_preferences/shared_preferences.dart';
 
-
-
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
 
@@ -21,11 +19,16 @@ class _HomePageState extends State<HomePage> {
   List<Visiteur> visiteurs = [];
   final _searchController = TextEditingController();
   final _service = VisiteurService();
+  List<Map<String, dynamic>> services = [];
+
 
   @override
   void initState() {
     super.initState();
     _loadVisiteurs();
+    _checkToken();
+    _fetchServices(); // ← Ajout ici
+
   }
 
   void _loadVisiteurs() {
@@ -34,111 +37,124 @@ class _HomePageState extends State<HomePage> {
       _searchController.clear();
     });
   }
+void _checkToken() async {
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('auth_token');
+  print('Token actuel : $token');
+}
+Future<void> _fetchServices() async {
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('auth_token');
+  final uri = Uri.parse("http://192.168.1.223:8060/api/services");
+  final response = await http.get(
+    uri,
+    headers: {
+      'Authorization': 'Bearer $token',
+    },
+  );
+
+  if (response.statusCode == 200) {
+    final data = jsonDecode(response.body);
+    print("🟡 Services JSON : $data"); 
+    setState(() {
+      services = List<Map<String, dynamic>>.from(data);
+    });
+  } else {
+    debugPrint("❌ Erreur de chargement des services : ${response.statusCode}");
+  }
+}
 
   void _ajouterVisiteur() {
-    final _nomController = TextEditingController();
-    final _prenomController = TextEditingController();
-    final _idNumberController = TextEditingController();
-    String _selectedMotif = 'Réunion';
-    String _selectedPiece = 'Carte Nationale';
+  final _nomController = TextEditingController();
+  final _prenomController = TextEditingController();
+  Map<String, dynamic>? selectedService;
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(getText(context, 'add_visitor')),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: _nomController,
-                  decoration: InputDecoration(labelText: getText(context, 'visitor_name')),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _prenomController,
-                  decoration: InputDecoration(labelText: getText(context, 'visitor_first_name')),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: _selectedMotif,
-                  decoration: InputDecoration(labelText: getText(context, 'reason')),
-                  items: ["Réunion", "Stage", "Visite de courtoisie", "Autre"]
-                      .map((motif) => DropdownMenuItem(
-                            value: motif,
-                            child: Text(motif),
-                          ))
-                      .toList(),
-                  onChanged: (val) {
-                    if (val != null) _selectedMotif = val;
-                  },
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: _selectedPiece,
-                  decoration: InputDecoration(labelText: getText(context, 'identification_type')),
-                  items: ["Carte Nationale", "Passeport", "Permis de conduire"]
-                      .map((type) => DropdownMenuItem(
-                            value: type,
-                            child: Text(type),
-                          ))
-                      .toList(),
-                  onChanged: (val) {
-                    if (val != null) _selectedPiece = val;
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _idNumberController,
-                  decoration: InputDecoration(labelText: getText(context, 'identification_number')),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(getText(context, 'cancel')),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (_nomController.text.trim().isEmpty || _prenomController.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(getText(context, 'name_required'))),
+  showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text("Ajouter un visiteur"),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _nomController,
+                decoration: const InputDecoration(labelText: "Nom"),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _prenomController,
+                decoration: const InputDecoration(labelText: "Prénom"),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<Map<String, dynamic>>(
+                value: selectedService,
+                items: services.map((service) {
+                  return DropdownMenuItem(
+                    value: service,
+                    child: Text("${service["id"]} - ${service["nom"] ?? "Service inconnu"}"),
+
+
                   );
-                  return;
-                }
-
-                final now = DateTime.now();
-                final dateEntree =
-                    "${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
-
-                final nouveau = Visiteur(
-                  nom: _nomController.text,
-                  prenom: _prenomController.text,
-                  pieceIdentite: _selectedPiece,
-                  numeroId: _idNumberController.text,
-                  motif: _selectedMotif,
-                  dateEntree: dateEntree,
-                  statut: "Présent",
-                  // === Champs ajoutés ===
-                  serviceId: 0,
-                  serviceNom: '',
-                  satisfaction: 5,
-                );
-
-                _service.ajouterVisiteur(nouveau);
-                _loadVisiteurs();
-                Navigator.pop(context);
-              },
-              child: Text(getText(context, 'add')),
-            ),
-          ],
-        );
-      },
-    );
+                }).toList(),
+                decoration: const InputDecoration(labelText: "Service Visité"),
+                onChanged: (val) {
+  if (val != null) {
+    setState(() {
+      selectedService = val;
+    });
   }
+},
+
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Annuler"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (_nomController.text.trim().isEmpty ||
+                  _prenomController.text.trim().isEmpty ||
+                  selectedService == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Veuillez remplir tous les champs obligatoires.")),
+                );
+                return;
+              }
+
+              final now = DateTime.now().toIso8601String().substring(0, 16); // Format yyyy-MM-ddTHH:mm
+
+              final visiteur = {
+  "nom": _nomController.text,
+  "prenom": _prenomController.text,
+  "numeroId": null,
+  "heureArrivee": now,
+  "heureSortie": null,
+"nomService": selectedService!["nom"] ?? "Inconnu",
+"serviceId": selectedService!["id"] ?? 0,
+
+  "statut": "EN COURS",
+  "satisfaction": null,
+  "qrCode": null,
+};
+
+
+              await _envoyerVisiteurAuBackend(visiteur);
+              _loadVisiteurs();
+              Navigator.pop(context);
+            },
+            child: const Text("Ajouter"),
+          ),
+        ],
+      );
+    },
+  );
+}
 
   void _supprimerVisiteur(int index) {
     _service.supprimerVisiteur(index);
@@ -155,116 +171,76 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _afficherDetails(Visiteur visiteur) {
-    Navigator.push(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (_, __, ___) => Scaffold(
-          appBar: AppBar(
-        // ✅ Ajout du bouton d'envoi à l'API
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.cloud_upload),
-            tooltip: 'Envoyer vers API',
-            onPressed: _envoyerVisiteurs,
-          ),
-          IconButton(
-            icon: const Icon(Icons.file_download),
-            tooltip: 'Exporter JSON',
-            onPressed: _exporterJSON,
-          ),
-        ],title: Text(visiteur.nom + visiteur.prenom)),
-          body: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text("${getText(context, 'visitor_name')}: ${visiteur.nom}", style: const TextStyle(fontSize: 18)),
-                Text("${getText(context, 'visitor_first_name')}: ${visiteur.prenom}", style: const TextStyle(fontSize: 18)),
-                Text("${getText(context, 'identification_type')}: ${visiteur.pieceIdentite}", style: const TextStyle(fontSize: 18)),
-                Text("${getText(context, 'identification_number')}: ${visiteur.numeroId}", style: const TextStyle(fontSize: 18)),
-                const SizedBox(height: 8),
-                Text("${getText(context, 'reason')}: ${visiteur.motif}", style: const TextStyle(fontSize: 18)),
-                const SizedBox(height: 8),
-                Text("Date: ${visiteur.dateEntree}", style: const TextStyle(fontSize: 18)),
-                Text("Statut: ${visiteur.statut}", style: const TextStyle(fontSize: 18)),
-                if (visiteur.dateDepart != null) ...[
-                  Text("Date de départ: ${visiteur.dateDepart}", style: const TextStyle(fontSize: 18)),
-                ],
-                if (visiteur.qrId != null) ...[
-                  Text("QR ID: ${visiteur.qrId}", style: const TextStyle(fontSize: 18)), // ✅ Affiche le QR ID s’il existe
-                ] else ...[
-                  Text("QR ID : Aucun badge attribué", style: TextStyle(fontSize: 16, fontStyle: FontStyle.italic, color: Colors.grey)),
-                ],
-              ],
-            ),
+  Navigator.push(
+    context,
+    PageRouteBuilder(
+      pageBuilder: (_, __, ___) => Scaffold(
+        appBar: AppBar(
+          title: Text("${visiteur.nom} ${visiteur.prenom}"),
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("Nom : ${visiteur.nom}", style: const TextStyle(fontSize: 18)),
+              Text("Prénom : ${visiteur.prenom}", style: const TextStyle(fontSize: 18)),
+
+              if (visiteur.numeroId != null && visiteur.numeroId!.isNotEmpty)
+                Text("Numéro ID : ${visiteur.numeroId}", style: const TextStyle(fontSize: 18)),
+
+              const SizedBox(height: 8),
+              Text("Heure d'arrivée : ${visiteur.dateEntree}", style: const TextStyle(fontSize: 18)),
+
+              if (visiteur.dateDepart != null)
+                Text("Heure de sortie : ${visiteur.dateDepart}", style: const TextStyle(fontSize: 18)),
+
+              Text("Service visité : ${visiteur.serviceNom}", style: const TextStyle(fontSize: 18)),
+              Text("Statut : ${visiteur.statut}", style: const TextStyle(fontSize: 18)),
+
+              if (visiteur.qrId != null)
+                Text("QR Code : ${visiteur.qrId}", style: const TextStyle(fontSize: 18))
+              else
+                const Text("QR Code : Aucun badge attribué",
+                    style: TextStyle(fontSize: 16, fontStyle: FontStyle.italic, color: Colors.grey)),
+
+              if (visiteur.satisfaction != null)
+                Text("Satisfaction : ${visiteur.satisfaction}/5", style: const TextStyle(fontSize: 18))
+              else
+                const Text("Satisfaction : Non renseignée",
+                    style: TextStyle(fontSize: 16, fontStyle: FontStyle.italic)),
+            ],
           ),
         ),
-        transitionsBuilder: (_, animation, __, child) => FadeTransition(opacity: animation, child: child),
-        transitionDuration: const Duration(milliseconds: 400),
       ),
-    ).then((_) => _loadVisiteurs());
-  }
+      transitionsBuilder: (_, animation, __, child) =>
+          FadeTransition(opacity: animation, child: child),
+      transitionDuration: const Duration(milliseconds: 400),
+    ),
+  ).then((_) => _loadVisiteurs());
+}
+
 
   // === Nouvelle fonction : envoi intelligent vers l'API ===
-Future<void> _envoyerVisiteurs() async {
+Future<void> _envoyerVisiteurAuBackend(Map<String, dynamic> visiteur) async {
   final prefs = await SharedPreferences.getInstance();
   final token = prefs.getString('auth_token');
+  final uri = Uri.parse("http://192.168.1.223:8060/api/visits");
 
-  if (token == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Token manquant. Connectez-vous.")),
-    );
-    return;
-  }
-
-  final box = Hive.box('visiteurs');
-  final liste = box.values.map((v) => Map<String, dynamic>.from(v)).toList();
-
-  for (var visiteur in liste) {
-    final isSorti = visiteur['dateDepart'] != null && visiteur['dateDepart'].toString().isNotEmpty;
-    final id = visiteur['id'] ?? 0;
-
-    final jsonBody = jsonEncode({
-      'nom': visiteur['nom'],
-      'prenom': visiteur['prenom'],
-      'numeroId': visiteur['numeroId'],
-      'heureArrivee': convertDateToSQLFormat(visiteur['dateEntree']),
-      'serviceId': visiteur['serviceId'],
-      'QRcode': visiteur['qrId'],
-      if (isSorti) 'exitDate': convertDateToSQLFormat(visiteur['dateDepart']),
-    });
-
-    try {
-      final uri = isSorti
-          ? Uri.parse('http://192.168.1.223:8060/api/visits/$id')
-          : Uri.parse('http://192.168.1.223:8060/api/visits');
-
-      final headers = {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      };
-  print("🔐 Token utilisé : $token");
-  print("📤 URL utilisée : $uri");
-  print("📤 Headers : $headers");
-  print("📦 Corps JSON : $jsonBody");
-      final response = isSorti
-      
-          ? await http.put(uri, headers: headers, body: jsonBody)
-          : await http.post(uri, headers: headers, body: jsonBody);
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        debugPrint("✅ Données envoyées pour ${visiteur['nom']}");
-      } else {
-        debugPrint("❌ (${response.statusCode}) : ${response.body}");
-      }
-    } catch (e) {
-      debugPrint("❗ Erreur : $e");
-    }
-  }
-
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text("Données envoyées à l'API")),
+  final response = await http.post(
+    uri,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    },
+    body: jsonEncode(visiteur),
   );
+
+  if (response.statusCode == 201 || response.statusCode == 200) {
+    debugPrint("✅ Visiteur ajouté avec succès.");
+  } else {
+    debugPrint("❌ Échec de l'ajout : ${response.statusCode} - ${response.body}");
+  }
 }
 
 
@@ -312,7 +288,24 @@ void _exporterJSON() {
           IconButton(
             icon: const Icon(Icons.cloud_upload),
             tooltip: 'Envoyer vers API',
-            onPressed: _envoyerVisiteurs,
+            onPressed: () {
+  final now = DateTime.now().toIso8601String().substring(0, 16);
+  final testVisiteur = {
+    "nom": "Test",
+    "prenom": "Utilisateur",
+    "numeroId": null,
+    "heureArrivee": now,
+    "heureSortie": null,
+    "serviceVisite": "Informatique", // Assure-toi que ce service existe
+    "serviceId": 1, // Un ID valide du backend
+    "statut": "EN COURS",
+    "satisfaction": null,
+    "qrCode": null,
+  };
+
+  _envoyerVisiteurAuBackend(testVisiteur);
+},
+
           ),
           IconButton(
             icon: const Icon(Icons.file_download),
@@ -365,7 +358,7 @@ void _exporterJSON() {
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text("${visiteur.motif} | ${visiteur.dateEntree} | ${visiteur.statut}"),
+Text("${visiteur.serviceNom} | ${visiteur.dateEntree} | ${visiteur.statut}"),
                             Text(
                               visiteur.qrId != null && visiteur.statut == 'Parti'
                                   ? "Badge libéré"
