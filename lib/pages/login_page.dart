@@ -37,10 +37,12 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       final response = await http.post(
-        Uri.parse('http://192.168.1.223:8060/api/login'),
+        Uri.parse('http://192.168.100.16:8060/api/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'username': username, 'password': password}),
       );
+print("🟡 Status: ${response.statusCode}");
+print("🟡 Body: ${response.body}");
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);

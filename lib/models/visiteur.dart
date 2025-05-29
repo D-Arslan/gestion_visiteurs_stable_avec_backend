@@ -1,36 +1,36 @@
 class Visiteur {
   String nom;
   String prenom;
-  String pieceIdentite; // carte nationale, passeport, permis de conduire
+  String? pieceIdentite;
   String numeroId;
-  String motif;
+  String? motif;
   String dateEntree;
   String statut;
   String? dateDepart;
   String? qrId;
 
-  // === Champs ajoutés pour correspondre au format API ===
   int? id;
-  String serviceNom = "";
-  int serviceId = 0;
-  int satisfaction = 0;
+  String serviceNom;
+  int serviceId;
+  int? satisfaction;
 
   Visiteur({
     required this.nom,
     required this.prenom,
-    required this.pieceIdentite,
+    this.pieceIdentite,
     required this.numeroId,
-    required this.motif,
+    this.motif,
     required this.dateEntree,
     required this.statut,
     this.dateDepart,
     this.qrId,
     this.id,
-    this.serviceNom = "",
-    this.serviceId = 0,
-    this.satisfaction = 0,
+    this.serviceNom = '',
+    required this.serviceId,
+    this.satisfaction,
   });
 
+  /// Pour Hive
   Map<String, dynamic> toMap() => {
     'nom': nom,
     'prenom': prenom,
@@ -41,7 +41,6 @@ class Visiteur {
     'statut': statut,
     'dateDepart': dateDepart,
     'qrId': qrId,
-    // === Champs ajoutés ===
     'id': id,
     'serviceNom': serviceNom,
     'serviceId': serviceId,
@@ -58,26 +57,57 @@ class Visiteur {
     statut: map['statut'],
     dateDepart: map['dateDepart'],
     qrId: map['qrId'],
-    // === Champs ajoutés ===
     id: map['id'],
     serviceNom: map['serviceNom'] ?? '',
     serviceId: map['serviceId'] ?? 0,
-    satisfaction: map['satisfaction'] ?? 0,
+    satisfaction: map['satisfaction'],
   );
 
-  // === Méthode ajoutée pour l'export API ===
-  Map<String, dynamic> toJson() {
-    return {
-      "id": id ?? 0,
-      "nom": nom,
-      "prenom": prenom,
-      "numeroId": numeroId,
-      "heureArrivee": dateEntree,
-      "heureSortie": dateDepart ?? "",
-      "serviceVisite": serviceNom,
-      "serviceId": serviceId,
-      "statut": statut,
-      "satisfaction": satisfaction,
-    };
-  }
-} 
+  /// Pour backend : JSON reçu en GET
+  factory Visiteur.fromJson(Map<String, dynamic> json) => Visiteur(
+    nom: json['nom'] ?? '',
+    prenom: json['prenom'] ?? '',
+    numeroId: json['numeroId'] ?? '',
+    statut: json['status'] ?? '',
+    dateEntree: json['visitDate'] ?? '',
+    dateDepart: json['exitDate'],
+    qrId: json['qrCode'],
+    id: json['idVisit'],
+    serviceId: json['serviceId'] ?? 0,
+    serviceNom: json['nomService'] ?? '',
+    satisfaction: json['satisfaction'],
+    pieceIdentite: json['pieceIdentite'],
+    motif: json['motif'],
+  );
+
+  /// Pour envoi général si besoin (complet)
+  Map<String, dynamic> toJson() => {
+    "id": id,
+    "nom": nom,
+    "prenom": prenom,
+    "numeroId": numeroId,
+    "heureArrivee": dateEntree,
+    "heureSortie": dateDepart ?? "",
+    "serviceVisite": serviceNom,
+    "serviceId": serviceId,
+    "statut": statut,
+    "satisfaction": satisfaction,
+    "qrCode": qrId,
+    "pieceIdentite": pieceIdentite,
+    "motif": motif,
+  };
+
+  /// ✅ Pour POST vers l’API — clean
+  Map<String, dynamic> toJsonForPost() => {
+  "nom": nom,
+  "prenom": prenom,
+  "numeroId": numeroId,
+  "heureArrivee": (dateEntree.trim().isEmpty) ? null : dateEntree,
+  "heureSortie": null, // explicitement nul
+  "serviceId": serviceId,
+  "statut": "PRESENT", // attention : ce statut doit exister dans ton enum Java
+  "satisfaction": null,
+  "qrCode": null,
+};
+
+}

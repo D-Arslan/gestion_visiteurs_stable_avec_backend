@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../utils/translations.dart';
 import '../models/visiteur.dart';
 import '../services/visiteur_service.dart';
+import '../services/visiteur_api_service.dart';
 import 'package:hive/hive.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http; // ✅ Ajout : pour les requêtes HTTP
@@ -18,12 +19,18 @@ class _HomePageState extends State<HomePage> {
 
   List<Visiteur> visiteurs = [];
   final _searchController = TextEditingController();
-  final _service = VisiteurService();
+  final _hiveService = VisiteurService();
+  final _apiService = VisiteurApiService();
+
   List<Map<String, dynamic>> services = [];
+  Map<String, dynamic>? selectedService; // à mettre ici, en tant qu'attribut de la classe
+bool useApi = true; // ← Change à false pour revenir à Hive
+bool isAdding = false;
 
 
   @override
   void initState() {
+    print("🔁 initState démarré");
     super.initState();
     _loadVisiteurs();
     _checkToken();
@@ -31,43 +38,66 @@ class _HomePageState extends State<HomePage> {
 
   }
 
-  void _loadVisiteurs() {
+  void _loadVisiteurs() async {
+  setState(() => visiteurs = []);
+
+  if (useApi) {
+    final data = await _apiService.fetchVisiteurs();
     setState(() {
-      visiteurs = _service.getAll();
-      _searchController.clear();
+      visiteurs = data;
+    });
+  } else {
+    setState(() {
+      visiteurs = _hiveService.getAll();
     });
   }
+
+  _searchController.clear();
+}
+
 void _checkToken() async {
   final prefs = await SharedPreferences.getInstance();
   final token = prefs.getString('auth_token');
   print('Token actuel : $token');
 }
 Future<void> _fetchServices() async {
+  print("📥 _fetchServices appelée");
   final prefs = await SharedPreferences.getInstance();
   final token = prefs.getString('auth_token');
-  final uri = Uri.parse("http://192.168.1.223:8060/api/services");
-  final response = await http.get(
-    uri,
-    headers: {
-      'Authorization': 'Bearer $token',
-    },
-  );
+  print("🔑 Token récupéré : $token");
 
-  if (response.statusCode == 200) {
-    final data = jsonDecode(response.body);
-    print("🟡 Services JSON : $data"); 
-    setState(() {
-      services = List<Map<String, dynamic>>.from(data);
-    });
-  } else {
-    debugPrint("❌ Erreur de chargement des services : ${response.statusCode}");
+final uri = Uri.parse("http://192.168.100.16:8060/api/services");
+  try {
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    print("🛠️ Code HTTP services : ${response.statusCode}");
+    print("📤 Réponse brute : ${response.body}");
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      setState(() {
+        services = List<Map<String, dynamic>>.from(data);
+      });
+
+      print("✅ Liste des services récupérés :");
+      for (var s in services) {
+        print("- ${s['nomService']}");
+      }
+    } else {
+      print("❌ Erreur HTTP : ${response.statusCode}");
+    }
+  } catch (e) {
+    print("❌ Exception lors du fetch des services : $e");
   }
 }
 
   void _ajouterVisiteur() {
   final _nomController = TextEditingController();
   final _prenomController = TextEditingController();
-  Map<String, dynamic>? selectedService;
+  final _numeroIdController = TextEditingController();
 
   showDialog(
     context: context,
@@ -88,25 +118,27 @@ Future<void> _fetchServices() async {
                 decoration: const InputDecoration(labelText: "Prénom"),
               ),
               const SizedBox(height: 12),
+              TextField(
+                controller: _numeroIdController,
+                decoration: const InputDecoration(labelText: "Numéro ID"),
+              ),
+              const SizedBox(height: 12),
               DropdownButtonFormField<Map<String, dynamic>>(
                 value: selectedService,
+                hint: const Text("Sélectionner un service"),
                 items: services.map((service) {
                   return DropdownMenuItem(
                     value: service,
-                    child: Text("${service["id"]} - ${service["nom"] ?? "Service inconnu"}"),
-
-
+                    child: Text("${service["nomService"] ?? "Inconnu"}"),
                   );
                 }).toList(),
-                decoration: const InputDecoration(labelText: "Service Visité"),
                 onChanged: (val) {
-  if (val != null) {
-    setState(() {
-      selectedService = val;
-    });
-  }
-},
-
+                  if (val != null) {
+                    setState(() {
+                      selectedService = val;
+                    });
+                  }
+                },
               ),
             ],
           ),
@@ -118,35 +150,70 @@ Future<void> _fetchServices() async {
           ),
           ElevatedButton(
             onPressed: () async {
+                print("🟡 Bouton 'Ajouter' cliqué");
+                print("Mode API actif ? $useApi");
               if (_nomController.text.trim().isEmpty ||
                   _prenomController.text.trim().isEmpty ||
+                  _numeroIdController.text.trim().isEmpty ||
                   selectedService == null) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Veuillez remplir tous les champs obligatoires.")),
+                  const SnackBar(
+                      content: Text("Veuillez remplir tous les champs.")),
                 );
                 return;
               }
 
-              final now = DateTime.now().toIso8601String().substring(0, 16); // Format yyyy-MM-ddTHH:mm
+              if (mounted) {
+  setState(() {
+    isAdding = true;
+  });
+}
 
-              final visiteur = {
-  "nom": _nomController.text,
-  "prenom": _prenomController.text,
-  "numeroId": null,
-  "heureArrivee": now,
-  "heureSortie": null,
-"nomService": selectedService!["nom"] ?? "Inconnu",
-"serviceId": selectedService!["id"] ?? 0,
+              final now = DateTime.now().toIso8601String().substring(0, 16);
 
-  "statut": "EN COURS",
-  "satisfaction": null,
-  "qrCode": null,
-};
+              final visiteur = Visiteur(
+                nom: _nomController.text.trim(),
+                prenom: _prenomController.text.trim(),
+                numeroId: _numeroIdController.text.trim(),
+                pieceIdentite: '',
+                motif: '',
+                dateEntree: now,
+                statut: "EN COURS",
+                dateDepart: null,
+                qrId: null,
+                serviceId: selectedService!["id"],
+                serviceNom: selectedService!["nomService"] ?? "Inconnu",
+                satisfaction: 0,
+              );
 
+              bool success = false;
 
-              await _envoyerVisiteurAuBackend(visiteur);
-              _loadVisiteurs();
-              Navigator.pop(context);
+              if (useApi) {
+                success = await _apiService.envoyerVisiteur(visiteur);
+              } else {
+                _hiveService.ajouterVisiteur(visiteur);
+                success = true;
+              }
+
+              if (mounted) {
+  setState(() {
+    isAdding = false;
+  });
+}
+
+              if (success) {
+                Navigator.pop(context); // ferme le formulaire
+                _loadVisiteurs(); // recharge la liste
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text("✅ Visiteur ajouté avec succès")),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text("❌ Échec de l'ajout du visiteur")),
+                );
+              }
             },
             child: const Text("Ajouter"),
           ),
@@ -156,19 +223,35 @@ Future<void> _fetchServices() async {
   );
 }
 
+
+
   void _supprimerVisiteur(int index) {
-    _service.supprimerVisiteur(index);
+  if (!useApi) {
+    _hiveService.supprimerVisiteur(index);
     _loadVisiteurs();
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Suppression non disponible côté API.")),
+    );
   }
+}
+
 
   void _marquerCommeParti(int index) {
+  if (!useApi) {
     final now = DateTime.now();
     final dateDepart =
         "${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
 
-    _service.marquerCommeParti(index, dateDepart);
+    _hiveService.marquerCommeParti(index, dateDepart);
     _loadVisiteurs();
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Action non disponible côté API.")),
+    );
   }
+}
+
 
   void _afficherDetails(Visiteur visiteur) {
   Navigator.push(
@@ -220,12 +303,26 @@ Future<void> _fetchServices() async {
   ).then((_) => _loadVisiteurs());
 }
 
+Future<void> _afficherDetailsDepuisApi(int id) async {
+  final apiService = VisiteurApiService();
+  final visiteur = await apiService.fetchVisiteurParId(id);
+
+  if (visiteur == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Erreur lors du chargement du visiteur depuis l'API.")),
+    );
+    return;
+  }
+
+  _afficherDetails(visiteur); // On réutilise ta fonction locale une fois le vrai Visiteur récupéré
+}
+
 
   // === Nouvelle fonction : envoi intelligent vers l'API ===
 Future<void> _envoyerVisiteurAuBackend(Map<String, dynamic> visiteur) async {
   final prefs = await SharedPreferences.getInstance();
   final token = prefs.getString('auth_token');
-  final uri = Uri.parse("http://192.168.1.223:8060/api/visits");
+  final uri = Uri.parse("http://192.168.100.16:8060/api/visits");
 
   final response = await http.post(
     uri,
@@ -285,34 +382,43 @@ void _exporterJSON() {
       appBar: AppBar(
         title: Text(getText(context, 'visitor_list')),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.cloud_upload),
-            tooltip: 'Envoyer vers API',
-            onPressed: () {
-  final now = DateTime.now().toIso8601String().substring(0, 16);
-  final testVisiteur = {
-    "nom": "Test",
-    "prenom": "Utilisateur",
-    "numeroId": null,
-    "heureArrivee": now,
-    "heureSortie": null,
-    "serviceVisite": "Informatique", // Assure-toi que ce service existe
-    "serviceId": 1, // Un ID valide du backend
-    "statut": "EN COURS",
-    "satisfaction": null,
-    "qrCode": null,
-  };
+  IconButton(
+    icon: Icon(useApi ? Icons.cloud : Icons.storage),
+    tooltip: useApi ? 'Mode API activé' : 'Mode local Hive',
+    onPressed: () {
+      setState(() {
+        useApi = !useApi;
+      });
+      _loadVisiteurs();
+    },
+  ),
+  IconButton(
+    icon: const Icon(Icons.cloud_upload),
+    tooltip: 'Envoyer vers API',
+    onPressed: () {
+      final now = DateTime.now().toIso8601String().substring(0, 16);
+      final testVisiteur = {
+        "nom": "Test",
+        "prenom": "Utilisateur",
+        "numeroId": null,
+        "heureArrivee": now,
+        "heureSortie": null,
+        "serviceVisite": "Informatique",
+        "serviceId": 1,
+        "statut": "EN COURS",
+        "satisfaction": null,
+        "qrCode": null,
+      };
+      _envoyerVisiteurAuBackend(testVisiteur);
+    },
+  ),
+  IconButton(
+    icon: const Icon(Icons.file_download),
+    tooltip: 'Exporter JSON',
+    onPressed: _exporterJSON,
+  ),
+],
 
-  _envoyerVisiteurAuBackend(testVisiteur);
-},
-
-          ),
-          IconButton(
-            icon: const Icon(Icons.file_download),
-            tooltip: 'Exporter JSON',
-            onPressed: _exporterJSON,
-          ),
-        ],
       ),
       body: Column(
         children: [
@@ -424,8 +530,13 @@ Text("${visiteur.serviceNom} | ${visiteur.dateEntree} | ${visiteur.statut}"),
                             ),
                           ],
                         ),
-                        onTap: () => _afficherDetails(visiteur),
-                      );
+                        onTap: () {
+  if (useApi && visiteur.id != null) {
+    _afficherDetailsDepuisApi(visiteur.id!);
+  } else {
+    _afficherDetails(visiteur);
+  }
+},                      );
                     },
                   ),
           ),
