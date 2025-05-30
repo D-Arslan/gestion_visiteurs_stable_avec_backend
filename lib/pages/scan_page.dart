@@ -9,7 +9,11 @@ import '../utils/translations.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import '../models/visiteur.dart';
 import '../services/visiteur_service.dart';
-
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/visiteur_api_service.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 
 class ScanPage extends StatefulWidget {
@@ -31,6 +35,11 @@ class _ScanPageState extends State<ScanPage> {
 
   Map<String, String>? _mrzFields;
 
+final _apiService = VisiteurApiService();
+List<Map<String, dynamic>> services = [];
+Map<String, dynamic>? selectedService;
+
+
 final _service = VisiteurService();
 
   final int inputSize = 224;
@@ -38,8 +47,194 @@ final _service = VisiteurService();
   @override
   void initState() {
     super.initState();
+   _fetchServices(); // ← Ajouté
     _loadModel();
   }
+
+Future<void> _fetchServices() async {
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('auth_token');
+  final uri = Uri.parse("http://192.168.100.16:8060/api/services");
+
+  try {
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      setState(() {
+        services = List<Map<String, dynamic>>.from(data);
+      });
+    }
+  } catch (_) {
+    // Erreur silencieuse
+  }
+}
+void _ajouterVisiteurViaMRZ(String nom, String prenom, String numero, String type) {
+  final now = DateTime.now().toIso8601String().substring(0, 16);
+
+  showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text("Sélectionner un service"),
+        content: DropdownButtonFormField<Map<String, dynamic>>(
+          value: selectedService,
+          hint: const Text("Choisir un service"),
+          items: services.map((service) {
+            return DropdownMenuItem(
+              value: service,
+              child: Text(service['nomService'] ?? 'Inconnu'),
+            );
+          }).toList(),
+          onChanged: (val) {
+            if (val != null) {
+              setState(() {
+                selectedService = val;
+              });
+            }
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text("Annuler"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+  if (selectedService == null) return;
+
+  final now = DateTime.now().toIso8601String().substring(0, 16);
+  final visiteur = Visiteur(
+    nom: nom,
+    prenom: prenom,
+    pieceIdentite: type,
+    numeroId: numero,
+    motif: '',
+    dateEntree: now,
+    statut: "EN COURS",
+    dateDepart: null,
+    qrId: null,
+    serviceId: selectedService!["id"],
+    serviceNom: selectedService!["nomService"] ?? "",
+    satisfaction: 0,
+  );
+
+  Navigator.of(context).pop(); // Ferme la boîte de dialogue du service
+
+  // ➕ Scan du QR code dans la même page
+  final qrCode = await scannerQrCodeDansDialog();
+
+  if (qrCode == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("QR code non scanné.")),
+    );
+    return;
+  }
+
+  final visiteurComplet = visiteur.copyWith(qrId: qrCode);
+
+  final success = await _apiService.envoyerVisiteur(visiteurComplet);
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(success
+          ? "✅ Visiteur ajouté avec badge"
+          : "❌ Échec de l'ajout du visiteur"),
+    ),
+  );
+},
+
+            child: const Text("Confirmer"),
+          ),
+        ],
+      );
+    },
+  );
+}
+Future<String?> scannerQrCodeDansDialog() async {
+  String? result;
+  bool isChecking = false;
+
+  await showDialog(
+    context: context,
+    barrierDismissible: true, // autorise la sortie par l'utilisateur
+    builder: (context) {
+      return AlertDialog(
+        title: const Text("Scanner le badge"),
+        content: SizedBox(
+          width: 300,
+          height: 300,
+          child: MobileScanner(
+            onDetect: (capture) async {
+              if (isChecking) return;
+              isChecking = true;
+
+              final code = capture.barcodes.first.rawValue;
+              if (code == null) {
+                isChecking = false;
+                return;
+              }
+
+              final estPris = await _verifierBadgeAttribue(code); // ⬅️ on vérifie dans l’API
+
+              if (estPris) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("❌ Badge déjà attribué. Veuillez en scanner un autre."),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                isChecking = false;
+              } else {
+                result = code;
+                Navigator.of(context).pop(); // QR valide → fermeture
+              }
+            },
+          ),
+        ),
+      );
+    },
+  );
+
+  return result;
+}
+
+Future<bool> _verifierBadgeAttribue(String qrCode) async {
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('auth_token');
+
+  try {
+    // Étape 1 : récupérer l'ID de la visite associée au badge
+    final idUrl = Uri.parse("http://192.168.100.16:8060/api/visits/by-qrcode?qrCode=$qrCode");
+    final idResponse = await http.get(idUrl, headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    });
+
+    if (idResponse.statusCode != 200) return false; // Pas trouvé → libre
+
+    final int visitId = jsonDecode(idResponse.body);
+
+    // Étape 2 : récupérer le statut de cette visite
+    final visitUrl = Uri.parse("http://192.168.100.16:8060/api/visits/$visitId");
+    final visitResponse = await http.get(visitUrl, headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    });
+
+    if (visitResponse.statusCode != 200) return false;
+
+    final data = jsonDecode(visitResponse.body);
+    final status = data['status'];
+
+    return status != 'CLOTURE'; // true = déjà attribué
+  } catch (e) {
+    print("Erreur de vérification du badge : $e");
+    return false;
+  }
+}
+
 
   Future<void> _loadModel() async {
     try {
@@ -275,105 +470,14 @@ setState(() {
   _lastScores = null;
 });
 if (!extracted.containsKey('Erreur')) {
-  final nom = extracted['Nom'] ?? '';
-  final prenom = extracted['Prénom'] ?? '';
-  final numero = extracted['Numéro'] ?? '';
-  final type = extracted['Type'] ?? 'Carte Nationale';
-String selectedMotif = "Réunion";
-
-  showDialog(
-    context: context,
-    builder: (context) {
-      return AlertDialog(
-        title: Text(getText(context, 'confirm_info')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-    Text("${getText(context, 'visitor_name')} : $nom"),
-    Text("${getText(context, 'visitor_first_name')} : $prenom"),
-    Text("${getText(context, 'identification_type')} : $type"),
-    Text("${getText(context, 'identification_number')} : $numero"),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(), // ❌ NON
-            child: Text(getText(context, 'no')),
-          ),
-          ElevatedButton(
-  onPressed: () {
-    Navigator.of(context).pop(); // Ferme le 1er dialog
-
-    String selectedMotif = "Réunion";
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text("Choisir le motif de la visite"),
-          content: DropdownButtonFormField<String>(
-            value: selectedMotif,
-            decoration: const InputDecoration(labelText: "Motif"),
-            items: [
-              "Réunion",
-              "Stage",
-              "Visite de courtoisie",
-              "Autre"
-            ].map((motif) => DropdownMenuItem(
-                  value: motif,
-                  child: Text(motif),
-                )).toList(),
-            onChanged: (val) {
-              if (val != null) selectedMotif = val;
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text("Annuler"),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final now = DateTime.now();
-                final dateEntree =
-                    "${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
-
-                final visiteur = Visiteur(
-                  nom: nom,
-                  prenom: prenom,
-                  pieceIdentite: type,
-                  numeroId: numero,
-                  motif: selectedMotif,
-                  dateEntree: dateEntree,
-                  statut: "Présent",
-                  serviceId: 0,
-                  serviceNom: '',
-                  satisfaction: 5,
-                );
-
-                _service.ajouterVisiteur(visiteur);
-                Navigator.of(context).pop();
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Visiteur ajouté avec succès")),
-                );
-              },
-              child: const Text("Confirmer"),
-            ),
-          ],
-        );
-      },
-    );
-  },
-  child: Text(getText(context, 'yes')),
-),
-
-        ],
-      );
-    },
+  _ajouterVisiteurViaMRZ(
+    extracted['Nom'] ?? '',
+    extracted['Prénom'] ?? '',
+    extracted['Numéro'] ?? '',
+    extracted['Type'] ?? 'Carte Nationale',
   );
 }
+
 
 
 

@@ -63,6 +63,25 @@ print("📦 Réponse API : ${response.body}");                 // ligne 3
     }
   }
 
+Future<bool> isBadgeActif(String qrCode) async {
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('auth_token');
+  final url = Uri.parse("http://192.168.100.16:8060/api/visits/by-qrcode?qrCode=$qrCode");
+
+  final response = await http.get(url, headers: {
+    'Authorization': 'Bearer $token',
+    'Content-Type': 'application/json',
+  });
+
+  if (response.statusCode == 200) {
+    final data = jsonDecode(response.body);
+    if (data is Map && data['status'] != null && data['status'] != 'CLOTURE') {
+      return true; // badge encore actif
+    }
+  }
+
+  return false; // badge libre ou inconnu
+}
 
   Future<Visiteur?> fetchVisiteurParId(int id) async {
   final prefs = await SharedPreferences.getInstance();

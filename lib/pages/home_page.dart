@@ -7,6 +7,8 @@ import 'package:hive/hive.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http; // ✅ Ajout : pour les requêtes HTTP
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -279,7 +281,10 @@ final uri = Uri.parse("http://192.168.100.16:8060/api/services");
                 Text("Heure de sortie : ${visiteur.dateDepart}", style: const TextStyle(fontSize: 18)),
 
               Text("Service visité : ${visiteur.serviceNom}", style: const TextStyle(fontSize: 18)),
-              Text("Statut : ${visiteur.statut}", style: const TextStyle(fontSize: 18)),
+              Text(
+  "Statut : ${visiteur.statut == 'CLOTURE' ? 'Visiteur parti' : 'EN_ATTENTE'}",
+  style: const TextStyle(fontSize: 18),
+),
 
               if (visiteur.qrId != null)
                 Text("QR Code : ${visiteur.qrId}", style: const TextStyle(fontSize: 18))
@@ -301,6 +306,8 @@ final uri = Uri.parse("http://192.168.100.16:8060/api/services");
       transitionDuration: const Duration(milliseconds: 400),
     ),
   ).then((_) => _loadVisiteurs());
+  print("📋 Visiteur reçu pour affichage : ${jsonEncode(visiteur.toJson())}");
+
 }
 
 Future<void> _afficherDetailsDepuisApi(int id) async {
@@ -407,7 +414,7 @@ void _exporterJSON() {
         "serviceId": 1,
         "statut": "EN COURS",
         "satisfaction": null,
-        "qrCode": null,
+        "qrCode": "Badge 10",
       };
       _envoyerVisiteurAuBackend(testVisiteur);
     },
@@ -453,7 +460,7 @@ void _exporterJSON() {
                           children: [
                             Text("$nom ${visiteur.prenom}"),
                             const SizedBox(width: 6),
-                            if (visiteur.qrId != null && visiteur.statut == 'Parti') ...[
+                            if (visiteur.qrId != null && visiteur.statut == 'CLOTURE') ...[
                               const Icon(Icons.block, color: Colors.orange, size: 18), // 🟠 Badge libéré
                             ] else if (visiteur.qrId != null) ...[
                               const Icon(Icons.verified, color: Colors.green, size: 18), // 🟢 Badge actif
@@ -466,7 +473,7 @@ void _exporterJSON() {
                           children: [
 Text("${visiteur.serviceNom} | ${visiteur.dateEntree} | ${visiteur.statut}"),
                             Text(
-                              visiteur.qrId != null && visiteur.statut == 'Parti'
+                              visiteur.qrId != null && visiteur.statut == 'CLOTURE'
                                   ? "Badge libéré"
                                   : visiteur.qrId != null
                                       ? "Badge attribué"
@@ -474,7 +481,7 @@ Text("${visiteur.serviceNom} | ${visiteur.dateEntree} | ${visiteur.statut}"),
                               style: TextStyle(
                                 fontSize: 12,
                                 fontStyle: FontStyle.italic,
-                                color: visiteur.qrId != null && visiteur.statut == 'Parti'
+                                color: visiteur.qrId != null && visiteur.statut == 'CLOTURE'
                                   ? Colors.orange
                                   : visiteur.qrId != null
                                       ? Colors.green
@@ -499,10 +506,17 @@ Text("${visiteur.serviceNom} | ${visiteur.dateEntree} | ${visiteur.statut}"),
                               },
                             ),
                             IconButton(
-                              icon: const Icon(Icons.logout),
-                              tooltip: getText(context, 'mark_as_left'),
-                              onPressed: () => _marquerCommeParti(index),
-                            ),
+  icon: const Icon(Icons.logout),
+  tooltip: getText(context, 'mark_as_left'),
+  onPressed: () {
+    if (useApi) {
+      marquerCommePartiViaQRCode(); // ⬅️ appel caméra + PUT API
+    } else {
+      _marquerCommeParti(index); // mode local Hive
+    }
+  },
+),
+
                             IconButton(
                               icon: const Icon(Icons.delete),
                               onPressed: () {
@@ -531,7 +545,8 @@ Text("${visiteur.serviceNom} | ${visiteur.dateEntree} | ${visiteur.statut}"),
                           ],
                         ),
                         onTap: () {
-  if (useApi && visiteur.id != null) {
+                          print("🟡 Visiteur cliqué : ${jsonEncode(visiteur)}");
+  if (useApi && visiteur.id != null) { // le problème est ici car visiteur.id est null, il faut le récupérer dès le début
     _afficherDetailsDepuisApi(visiteur.id!);
   } else {
     _afficherDetails(visiteur);
@@ -549,4 +564,114 @@ Text("${visiteur.serviceNom} | ${visiteur.dateEntree} | ${visiteur.statut}"),
       ),
     );
   }
+  Future<void> marquerCommePartiViaQRCode() async {
+  String? scannedQr;
+
+  // 1. Scanner le QR code
+  await showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text("Scanner le badge pour départ"),
+        content: SizedBox(
+          width: 300,
+          height: 300,
+          child: MobileScanner(
+            onDetect: (capture) {
+              final barcode = capture.barcodes.first;
+              if (barcode.rawValue != null) {
+                scannedQr = barcode.rawValue;
+                Navigator.of(context).pop();
+              }
+            },
+          ),
+        ),
+      );
+    },
+  );
+
+  if (scannedQr == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("QR code non scanné.")),
+    );
+    return;
+  }
+
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('auth_token');
+
+  try {
+    // 2. GET ID depuis le QR code
+    final getIdUrl = Uri.parse("http://192.168.100.16:8060/api/visits/by-qrcode?qrCode=$scannedQr");
+    final getIdResponse = await http.get(getIdUrl, headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    });
+
+    if (getIdResponse.statusCode != 200) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur lors de la récupération de l'ID (GET 1)")),
+      );
+      return;
+    }
+
+    final int visitId = jsonDecode(getIdResponse.body);
+
+    // 3. GET objet complet
+    final getVisitUrl = Uri.parse("http://192.168.100.16:8060/api/visits/$visitId");
+    final getVisitResponse = await http.get(getVisitUrl, headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    });
+
+    if (getVisitResponse.statusCode != 200) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur lors de la récupération du visiteur (GET 2)")),
+      );
+      return;
+    }
+
+    final data = jsonDecode(getVisitResponse.body);
+
+    if (data['status'] == 'CLOTURE') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Visiteur déjà marqué comme parti.")),
+      );
+      return;
+    }
+
+    // 4. Mise à jour de l’objet
+    final now = DateTime.now().toIso8601String().substring(0, 16);
+    data['exitDate'] = now;
+    data['status'] = "CLOTURE";
+
+    // 5. PUT
+    final putUrl = Uri.parse("http://192.168.100.16:8060/api/visits/$visitId");
+    final putResponse = await http.put(
+      putUrl,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(data),
+    );
+
+    if (putResponse.statusCode == 200) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("✅ Visiteur marqué comme parti.")),
+      );
+      _loadVisiteurs(); // recharge la liste
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("❌ Erreur PUT : ${putResponse.statusCode}")),
+      );
+    }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("❌ Exception : $e")),
+    );
+  }
+}
+
+
 }

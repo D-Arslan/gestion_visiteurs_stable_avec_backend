@@ -107,7 +107,40 @@ class Visiteur {
   "serviceId": serviceId,
   "statut": "PRESENT", // attention : ce statut doit exister dans ton enum Java
   "satisfaction": null,
-  "qrCode": null,
+  "qrCode": qrId,
 };
+
+// modifier un champ en gardant les autres 
+Visiteur copyWith({
+  String? nom,
+  String? prenom,
+  String? pieceIdentite,
+  String? numeroId,
+  String? motif,
+  String? dateEntree,
+  String? statut,
+  String? dateDepart,
+  String? qrId,
+  int? id,
+  String? serviceNom,
+  int? serviceId,
+  int? satisfaction,
+}) {
+  return Visiteur(
+    nom: nom ?? this.nom,
+    prenom: prenom ?? this.prenom,
+    pieceIdentite: pieceIdentite ?? this.pieceIdentite,
+    numeroId: numeroId ?? this.numeroId,
+    motif: motif ?? this.motif,
+    dateEntree: dateEntree ?? this.dateEntree,
+    statut: statut ?? this.statut,
+    dateDepart: dateDepart ?? this.dateDepart,
+    qrId: qrId ?? this.qrId,
+    id: id ?? this.id,
+    serviceNom: serviceNom ?? this.serviceNom,
+    serviceId: serviceId ?? this.serviceId,
+    satisfaction: satisfaction ?? this.satisfaction,
+  );
+}
 
 }
