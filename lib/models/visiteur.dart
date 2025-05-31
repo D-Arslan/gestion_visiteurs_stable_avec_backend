@@ -68,9 +68,9 @@ class Visiteur {
   nom: json['nom'] ?? '',
   prenom: json['prenom'] ?? '',
   numeroId: json['numeroId'] ?? '',
-  statut: json['status'] ?? '',
+  statut: json['statut'] ?? json['status'] ?? '',
   dateEntree: json['visitDate'] ?? '',
-dateDepart: json['heureSortie'],
+  dateDepart: json['exitDate'],
   qrId: json['qrCode'],
   id: json['idVisit'] ?? json['id'], // ← selon le nom exact renvoyé
   serviceId: json['serviceId'] ?? json['service']?['id'] ?? 0,

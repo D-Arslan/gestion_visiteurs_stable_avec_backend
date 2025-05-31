@@ -352,14 +352,17 @@ Future<bool> _verifierBadgeAttribue(String qrCode) async {
                 Text("Numéro ID : ${visiteur.numeroId}", style: const TextStyle(fontSize: 18)),
 
               const SizedBox(height: 8),
-              Text("Heure d'arrivée : ${visiteur.dateEntree}", style: const TextStyle(fontSize: 18)),
+              Text("Heure d'arrivée : ${visiteur.dateEntree.replaceAll('T', ' ')}", style: const TextStyle(fontSize: 18)),
 
-              if (visiteur.dateDepart != null)
-                Text("Heure de sortie : ${visiteur.dateDepart}", style: const TextStyle(fontSize: 18)),
+              if (visiteur.dateDepart != null && visiteur.dateDepart!.isNotEmpty)
+  Text(
+  "Heure de sortie : ${visiteur.dateDepart?.replaceAll('T', ' ') ?? 'Non renseignée'}",
+  style: const TextStyle(fontSize: 18),
+),
 
               Text("Service visité : ${visiteur.serviceNom}", style: const TextStyle(fontSize: 18)),
               Text(
-  "Statut : ${visiteur.statut == 'CLOTURE' ? 'Visiteur parti' : 'EN_ATTENTE'}",
+  "Statut : ${visiteur.statut == 'CLOTURE' ? 'Parti' : 'Présent'}",
   style: const TextStyle(fontSize: 18),
 ),
 
@@ -466,7 +469,7 @@ void _exporterJSON() {
       appBar: AppBar(
         title: Text(getText(context, 'visitor_list')),
         actions: [
-  IconButton(
+  /*IconButton(
     icon: Icon(useApi ? Icons.cloud : Icons.storage),
     tooltip: useApi ? 'Mode API activé' : 'Mode local Hive',
     onPressed: () {
@@ -475,7 +478,7 @@ void _exporterJSON() {
       });
       _loadVisiteurs();
     },
-  ),
+  ),*/
   IconButton(
     icon: const Icon(Icons.cloud_upload),
     tooltip: 'Envoyer vers API',
@@ -537,7 +540,7 @@ void _exporterJSON() {
                     itemBuilder: (context, index) {
                       final visiteur = visiteurs[index];
                       final nom = visiteur.nom;
-
+print("🟨 Visiteur : ${visiteur.nom} - Statut = ${visiteur.statut}");
                       if (_searchController.text.isNotEmpty &&
                           !nom.toLowerCase().contains(_searchController.text.toLowerCase())) {
                         return const SizedBox.shrink();
@@ -548,13 +551,15 @@ void _exporterJSON() {
   children: [
     Text("$nom ${visiteur.prenom}"),
     const SizedBox(width: 6),
-    if (visiteur.qrId != null && visiteur.dateDepart != null) ...[
-  const Icon(Icons.block, color: Colors.red, size: 18), // 🟠 Badge libéré
-] else if (visiteur.qrId != null && visiteur.dateDepart == null) ...[
-  const Icon(Icons.verified, color: Colors.green, size: 18), // 🟢 Badge attribué
+    if (visiteur.qrId != null && visiteur.statut == "PRESENT") ...[
+  const Icon(Icons.verified, color: Colors.green, size: 18), // ✅ Badge actif
+] else if (visiteur.qrId != null && visiteur.statut != "PRESENT") ...[
+  const Icon(Icons.block, color: Colors.red, size: 18), // 🔴 Badge libéré
 ] else ...[
   const Icon(Icons.do_not_disturb_alt, color: Colors.grey, size: 18), // ⚪ Aucun badge
-],
+]
+
+,
 
 
   ],
@@ -566,18 +571,21 @@ void _exporterJSON() {
 Text(
   visiteur.qrId == null
       ? "Aucun badge attribué"
-      : (visiteur.dateDepart != null ? "Badge libéré" : "Badge attribué"),
-
-
+      : (visiteur.statut == "PRESENT"
+          ? "Badge attribué"
+          : "Badge libéré"),
   style: TextStyle(
     fontSize: 12,
     fontStyle: FontStyle.italic,
     color: visiteur.qrId == null
-    ? Colors.grey
-    : (visiteur.dateDepart != null ? Colors.red : Colors.green),
-
+        ? Colors.grey
+        : (visiteur.statut == "PRESENT"
+            ? Colors.green
+            : Colors.red),
   ),
 ),
+
+
 
                           ],),
                         trailing: Row(
@@ -751,7 +759,9 @@ Text(
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("✅ Visiteur marqué comme parti.")),
       );
+      setState(() {
       _loadVisiteurs(); // recharge la liste
+       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("❌ Erreur PUT : ${putResponse.statusCode}")),

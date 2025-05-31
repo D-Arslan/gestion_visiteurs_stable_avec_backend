@@ -36,11 +36,11 @@ class SettingsPage extends StatelessWidget {
             title: Text(getText(context, 'nav_scan')),
             onTap: () => onNavigate('scan'),
           ),
-          ListTile(
+          /*ListTile(
             leading: Icon(Icons.qr_code),
             title: Text(getText(context, 'qr_code')),
             onTap: () => onNavigate('qr'),
-          ),
+          ),*/
           ListTile(
             leading: Icon(Icons.language),
             title: Text(getText(context, 'language')),

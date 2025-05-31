@@ -1,3 +1,8 @@
+/// Cette page est désactivée actuellement.
+/// Le scan de QR code est désormais géré depuis la HomePage.
+/// On la conserve au cas où l’encadrant souhaite la réintégrer.
+
+
 // Code actuel de la page QR à corriger (MobileScanner + attribution QR / marquage départ)
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';

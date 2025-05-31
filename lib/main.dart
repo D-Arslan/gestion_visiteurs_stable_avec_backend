@@ -5,7 +5,7 @@ import 'pages/home_page.dart';
 import 'pages/login_page.dart';
 import 'pages/settings_page.dart';
 import 'pages/scan_page.dart';
-import 'pages/qr_code_page.dart';
+//import 'pages/qr_code_page.dart';
 import 'utils/translations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -69,8 +69,8 @@ Widget _getPage() {
     onNavigate: _navigateTo,
   );
 
-      case 'qr':
-      return const QRCodePage();
+     /* case 'qr':
+      return const QRCodePage();*/
     case 'home':
     default:
       return HomePage(key: UniqueKey()); // RECONSTRUIT forcé
@@ -81,9 +81,9 @@ Widget _getPage() {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      routes: {
+      /*routes: {
         '/qr_scan': (context) => const QRCodePage(), // ✅ Route ajoutée pour le scan avec visiteur
-      },
+      },*/
       locale: _locale,
       supportedLocales: const [
         Locale('fr'),
@@ -97,45 +97,48 @@ Widget _getPage() {
       ],
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primaryColor: Colors.blue,
-        scaffoldBackgroundColor: Colors.grey[50],
-        colorScheme: ColorScheme.fromSwatch(primarySwatch: Colors.blue).copyWith(
-          secondary: Colors.blueAccent,
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.blue,
-          foregroundColor: Colors.white,
-          elevation: 4,
-          centerTitle: true,
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blue,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Colors.blue.shade100),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Colors.blue.shade100),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Colors.blue, width: 2),
-          ),
-        ),
+  primaryColor: const Color(0xFFF44336), // Rouge principal
+  scaffoldBackgroundColor: const Color(0xFFFAF9F6), // Fond très clair
+  colorScheme: ColorScheme.fromSwatch(
+    primarySwatch: Colors.red,
+  ).copyWith(
+    secondary: const Color(0xFFFF7043), // Accent plus vif
+  ),
+  appBarTheme: const AppBarTheme(
+    backgroundColor: Color(0xFFF44336),
+    foregroundColor: Colors.white,
+    elevation: 4,
+    centerTitle: true,
+  ),
+  elevatedButtonTheme: ElevatedButtonThemeData(
+    style: ElevatedButton.styleFrom(
+      backgroundColor: const Color(0xFFF44336),
+      foregroundColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(10)),
       ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+    ),
+  ),
+  inputDecorationTheme: InputDecorationTheme(
+    filled: true,
+    fillColor: Colors.white,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(8),
+      borderSide: const BorderSide(color: Color(0xFFEF9A9A)),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(8),
+      borderSide: const BorderSide(color: Color(0xFFEF9A9A)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(8),
+      borderSide: const BorderSide(color: Color(0xFFF44336), width: 2),
+    ),
+  ),
+),
+
       home: _isLoggedIn
           ? Builder(
               builder: (context) => Scaffold(
@@ -147,22 +150,23 @@ Widget _getPage() {
                           ? 1
                           : _currentPage == 'qr'
                               ? 2
-                              : 3,
+                : 0,
                   onTap: (index) {
                     if (index == 0) _navigateTo('home');
                     if (index == 1) _navigateTo('scan');
-                    if (index == 2) _navigateTo('qr');
-                    if (index == 3) _navigateTo('settings');
+                    //if (index == 2) _navigateTo('qr');
+                    if (index == 2) _navigateTo('settings');
                   },
-                  selectedItemColor: Colors.blue,
+                  selectedItemColor: Color(0xFFF44336),
+
                   unselectedItemColor: Colors.grey[700],
                   items: [
                     BottomNavigationBarItem(
                         icon: Icon(Icons.home), label: getText(context, 'nav_home')),
                     BottomNavigationBarItem(
                         icon: Icon(Icons.qr_code_scanner), label: getText(context, 'nav_scan')),
-                    BottomNavigationBarItem(
-                        icon: Icon(Icons.qr_code), label: getText(context, 'qr_code')),
+                   //BottomNavigationBarItem(
+                       // icon: Icon(Icons.qr_code), label: getText(context, 'qr_code')),
                     BottomNavigationBarItem(
                         icon: Icon(Icons.settings), label: getText(context, 'settings')),
                   ],
