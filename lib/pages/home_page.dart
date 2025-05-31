@@ -28,6 +28,7 @@ class _HomePageState extends State<HomePage> {
   Map<String, dynamic>? selectedService; // à mettre ici, en tant qu'attribut de la classe
 bool useApi = true; // ← Change à false pour revenir à Hive
 bool isAdding = false;
+bool ordreInverse = false;
 
 
   @override
@@ -95,6 +96,93 @@ final uri = Uri.parse("http://192.168.100.16:8060/api/services");
     print("❌ Exception lors du fetch des services : $e");
   }
 }
+String getNomServiceById(int id) {
+  if (services.isEmpty) return "Service inconnu";
+  final service = services.firstWhere(
+    (s) => s['id'] == id,
+    orElse: () => {'nomService': 'Service inconnu'},
+  );
+  return service['nomService'];
+}
+Future<String?> scannerQrCodeDansDialog() async {
+  String? result;
+  bool isChecking = false;
+
+  await showDialog(
+    context: context,
+    barrierDismissible: true,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text("Scanner le badge"),
+        content: SizedBox(
+          width: 300,
+          height: 300,
+          child: MobileScanner(
+            onDetect: (capture) async {
+              if (isChecking) return;
+              isChecking = true;
+
+              final code = capture.barcodes.first.rawValue;
+              if (code == null) {
+                isChecking = false;
+                return;
+              }
+
+              final estPris = await _verifierBadgeAttribue(code);
+
+              if (estPris) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("❌ Badge déjà attribué."),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                isChecking = false;
+              } else {
+                result = code;
+                Navigator.of(context).pop();
+              }
+            },
+          ),
+        ),
+      );
+    },
+  );
+
+  return result;
+}
+Future<bool> _verifierBadgeAttribue(String qrCode) async {
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('auth_token');
+
+  try {
+    final idUrl = Uri.parse("http://192.168.100.16:8060/api/visits/by-qrcode?qrCode=$qrCode");
+    final idResponse = await http.get(idUrl, headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    });
+
+    if (idResponse.statusCode != 200) return false;
+
+    final int visitId = jsonDecode(idResponse.body);
+
+    final visitUrl = Uri.parse("http://192.168.100.16:8060/api/visits/$visitId");
+    final visitResponse = await http.get(visitUrl, headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    });
+
+    if (visitResponse.statusCode != 200) return false;
+
+    final data = jsonDecode(visitResponse.body);
+    final status = data['status'];
+
+    return status != 'CLOTURE';
+  } catch (e) {
+    print("Erreur de vérification du badge : $e");
+    return false;
+  }
+}
 
   void _ajouterVisiteur() {
   final _nomController = TextEditingController();
@@ -152,24 +240,17 @@ final uri = Uri.parse("http://192.168.100.16:8060/api/services");
           ),
           ElevatedButton(
             onPressed: () async {
-                print("🟡 Bouton 'Ajouter' cliqué");
-                print("Mode API actif ? $useApi");
               if (_nomController.text.trim().isEmpty ||
                   _prenomController.text.trim().isEmpty ||
                   _numeroIdController.text.trim().isEmpty ||
                   selectedService == null) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text("Veuillez remplir tous les champs.")),
+                  const SnackBar(content: Text("Veuillez remplir tous les champs.")),
                 );
                 return;
               }
 
-              if (mounted) {
-  setState(() {
-    isAdding = true;
-  });
-}
+              setState(() => isAdding = true);
 
               final now = DateTime.now().toIso8601String().substring(0, 16);
 
@@ -188,34 +269,27 @@ final uri = Uri.parse("http://192.168.100.16:8060/api/services");
                 satisfaction: 0,
               );
 
-              bool success = false;
+              // ➕ Étape : scan QR
+              final qrCode = await scannerQrCodeDansDialog();
 
-              if (useApi) {
-                success = await _apiService.envoyerVisiteur(visiteur);
-              } else {
-                _hiveService.ajouterVisiteur(visiteur);
-                success = true;
+              if (qrCode != null) {
+                final visiteurComplet = visiteur.copyWith(qrId: qrCode);
+                final success = await _apiService.envoyerVisiteur(visiteurComplet);
+
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("✅ Visiteur ajouté avec badge.")),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("❌ Échec lors de l’envoi du visiteur.")),
+                  );
+                }
               }
 
-              if (mounted) {
-  setState(() {
-    isAdding = false;
-  });
-}
-
-              if (success) {
-                Navigator.pop(context); // ferme le formulaire
-                _loadVisiteurs(); // recharge la liste
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text("✅ Visiteur ajouté avec succès")),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text("❌ Échec de l'ajout du visiteur")),
-                );
-              }
+              Navigator.pop(context);
+              _loadVisiteurs();
+              setState(() => isAdding = false);
             },
             child: const Text("Ajouter"),
           ),
@@ -224,6 +298,7 @@ final uri = Uri.parse("http://192.168.100.16:8060/api/services");
     },
   );
 }
+
 
 
 
@@ -256,6 +331,8 @@ final uri = Uri.parse("http://192.168.100.16:8060/api/services");
 
 
   void _afficherDetails(Visiteur visiteur) {
+    visiteur.serviceNom = getNomServiceById(visiteur.serviceId);
+
   Navigator.push(
     context,
     PageRouteBuilder(
@@ -414,17 +491,28 @@ void _exporterJSON() {
         "serviceId": 1,
         "statut": "EN COURS",
         "satisfaction": null,
-        "qrCode": "Badge 10",
+        "qrCode": "Badge X",
       };
       _envoyerVisiteurAuBackend(testVisiteur);
     },
   ),
   IconButton(
+  icon: Icon(Icons.swap_vert),
+  tooltip: ordreInverse ? 'Plus anciens d\'abord' : 'Plus récents d\'abord',
+  onPressed: () {
+    setState(() {
+      ordreInverse = !ordreInverse;
+      visiteurs = visiteurs.reversed.toList();
+    });
+  },
+),
+
+ /* IconButton(
     icon: const Icon(Icons.file_download),
     tooltip: 'Exporter JSON',
     onPressed: _exporterJSON,
   ),
-],
+*/],
 
       ),
       body: Column(
@@ -457,42 +545,45 @@ void _exporterJSON() {
 
                       return ListTile(
                         title: Row(
-                          children: [
-                            Text("$nom ${visiteur.prenom}"),
-                            const SizedBox(width: 6),
-                            if (visiteur.qrId != null && visiteur.statut == 'CLOTURE') ...[
-                              const Icon(Icons.block, color: Colors.orange, size: 18), // 🟠 Badge libéré
-                            ] else if (visiteur.qrId != null) ...[
-                              const Icon(Icons.verified, color: Colors.green, size: 18), // 🟢 Badge actif
-                            ] else ...[
-                              const Icon(Icons.do_not_disturb_alt, color: Colors.grey, size: 18), // ⚪ Aucun badge
-                            ],
-                          ],),
+  children: [
+    Text("$nom ${visiteur.prenom}"),
+    const SizedBox(width: 6),
+    if (visiteur.qrId != null && visiteur.dateDepart != null) ...[
+  const Icon(Icons.block, color: Colors.red, size: 18), // 🟠 Badge libéré
+] else if (visiteur.qrId != null && visiteur.dateDepart == null) ...[
+  const Icon(Icons.verified, color: Colors.green, size: 18), // 🟢 Badge attribué
+] else ...[
+  const Icon(Icons.do_not_disturb_alt, color: Colors.grey, size: 18), // ⚪ Aucun badge
+],
+
+
+  ],
+),
+
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-Text("${visiteur.serviceNom} | ${visiteur.dateEntree} | ${visiteur.statut}"),
-                            Text(
-                              visiteur.qrId != null && visiteur.statut == 'CLOTURE'
-                                  ? "Badge libéré"
-                                  : visiteur.qrId != null
-                                      ? "Badge attribué"
-                                      : "Aucun badge attribué",
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontStyle: FontStyle.italic,
-                                color: visiteur.qrId != null && visiteur.statut == 'CLOTURE'
-                                  ? Colors.orange
-                                  : visiteur.qrId != null
-                                      ? Colors.green
-                                      : Colors.grey,
-                              ),
-                            ),
+Text(
+  visiteur.qrId == null
+      ? "Aucun badge attribué"
+      : (visiteur.dateDepart != null ? "Badge libéré" : "Badge attribué"),
+
+
+  style: TextStyle(
+    fontSize: 12,
+    fontStyle: FontStyle.italic,
+    color: visiteur.qrId == null
+    ? Colors.grey
+    : (visiteur.dateDepart != null ? Colors.red : Colors.green),
+
+  ),
+),
+
                           ],),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
+                          children: [ // Suppression du bouton de scan 
+                            /*IconButton(
                               icon: const Icon(Icons.qr_code),
                               tooltip: 'Attribuer un badge',
                               onPressed: () {
@@ -504,7 +595,7 @@ Text("${visiteur.serviceNom} | ${visiteur.dateEntree} | ${visiteur.statut}"),
                                   Navigator.pushNamed(context, '/qr_scan', arguments: visiteur);
                                 }
                               },
-                            ),
+                            ),*/
                             IconButton(
   icon: const Icon(Icons.logout),
   tooltip: getText(context, 'mark_as_left'),

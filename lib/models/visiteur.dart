@@ -65,20 +65,21 @@ class Visiteur {
 
   /// Pour backend : JSON reçu en GET
   factory Visiteur.fromJson(Map<String, dynamic> json) => Visiteur(
-    nom: json['nom'] ?? '',
-    prenom: json['prenom'] ?? '',
-    numeroId: json['numeroId'] ?? '',
-    statut: json['status'] ?? '',
-    dateEntree: json['visitDate'] ?? '',
-    dateDepart: json['exitDate'],
-    qrId: json['qrCode'],
-    id: json['idVisit'],
-    serviceId: json['serviceId'] ?? 0,
-    serviceNom: json['nomService'] ?? '',
-    satisfaction: json['satisfaction'],
-    pieceIdentite: json['pieceIdentite'],
-    motif: json['motif'],
-  );
+  nom: json['nom'] ?? '',
+  prenom: json['prenom'] ?? '',
+  numeroId: json['numeroId'] ?? '',
+  statut: json['status'] ?? '',
+  dateEntree: json['visitDate'] ?? '',
+dateDepart: json['heureSortie'],
+  qrId: json['qrCode'],
+  id: json['idVisit'] ?? json['id'], // ← selon le nom exact renvoyé
+  serviceId: json['serviceId'] ?? json['service']?['id'] ?? 0,
+  serviceNom: json['nomService'] ?? json['service']?['nom'] ?? '',
+  satisfaction: json['satisfaction'],
+  pieceIdentite: json['pieceIdentite'],
+  motif: json['motif'],
+);
+
 
   /// Pour envoi général si besoin (complet)
   Map<String, dynamic> toJson() => {
@@ -88,7 +89,7 @@ class Visiteur {
     "numeroId": numeroId,
     "heureArrivee": dateEntree,
     "heureSortie": dateDepart ?? "",
-    "serviceVisite": serviceNom,
+    "serviceVisite": serviceNom, // enlevé 
     "serviceId": serviceId,
     "statut": statut,
     "satisfaction": satisfaction,
@@ -137,7 +138,7 @@ Visiteur copyWith({
     dateDepart: dateDepart ?? this.dateDepart,
     qrId: qrId ?? this.qrId,
     id: id ?? this.id,
-    serviceNom: serviceNom ?? this.serviceNom,
+    serviceNom: serviceNom ?? this.serviceNom, // enlevé
     serviceId: serviceId ?? this.serviceId,
     satisfaction: satisfaction ?? this.satisfaction,
   );
